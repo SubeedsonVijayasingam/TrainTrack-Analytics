@@ -86,9 +86,10 @@ router.post("/", async (req, res) => {
             password: password
         });
 
-        // Save to MongoDB
+        // Save user to MongoDB
         await user.save();
 
+        // Send success response
         res.status(201).json({
             message: "User created successfully",
             user: {
