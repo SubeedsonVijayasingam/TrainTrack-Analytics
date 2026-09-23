@@ -5,7 +5,7 @@ const router = express.Router();
 
 // ======================================================
 // GET /api/users
-// Read all users
+// Get all users
 // ======================================================
 router.get("/", async (req, res) => {
     try {
@@ -41,7 +41,7 @@ router.get("/count", async (req, res) => {
 
 // ======================================================
 // GET /api/users/:id
-// Read one user by ID
+// Get one user by ID
 // ======================================================
 router.get("/:id", async (req, res) => {
     try {
@@ -111,6 +111,34 @@ router.put("/:id", async (req, res) => {
 });
 
 // ======================================================
+// DELETE /api/users/:id
+// Delete an existing user
+// ======================================================
+router.delete("/:id", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        await User.findByIdAndDelete(req.params.id);
+
+        res.json({
+            message: "User deleted successfully"
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            message: "Failed to delete user",
+            error: error.message
+        });
+    }
+});
+
+// ======================================================
 // POST /api/users
 // Create a new user
 // ======================================================
@@ -118,14 +146,12 @@ router.post("/", async (req, res) => {
     try {
         const { name, email, password } = req.body;
 
-        // Check required fields
         if (!name || !email || !password) {
             return res.status(400).json({
                 message: "Name, email and password are required"
             });
         }
 
-        // Check whether email already exists
         const existingUser = await User.findOne({ email });
 
         if (existingUser) {
@@ -134,17 +160,14 @@ router.post("/", async (req, res) => {
             });
         }
 
-        // Create new user
         const user = new User({
             name: name,
             email: email,
             password: password
         });
 
-        // Save user to MongoDB
         await user.save();
 
-        // Send success response
         res.status(201).json({
             message: "User created successfully",
             user: {
