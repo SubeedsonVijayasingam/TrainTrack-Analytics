@@ -18,6 +18,23 @@ router.get("/", async (req, res) => {
     }
 });
 
+// GET /api/users/count
+// Get total number of users
+router.get("/count", async (req, res) => {
+    try {
+        const count = await User.countDocuments();
+
+        res.json({
+            totalUsers: count
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Failed to count users",
+            error: error.message
+        });
+    }
+});
+
 // GET /api/users/:id
 // Read one user by ID
 router.get("/:id", async (req, res) => {
