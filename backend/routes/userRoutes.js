@@ -3,8 +3,10 @@ const User = require("../models/User");
 
 const router = express.Router();
 
+// ======================================================
 // GET /api/users
 // Read all users
+// ======================================================
 router.get("/", async (req, res) => {
     try {
         const users = await User.find();
@@ -18,8 +20,10 @@ router.get("/", async (req, res) => {
     }
 });
 
+// ======================================================
 // GET /api/users/count
 // Get total number of users
+// ======================================================
 router.get("/count", async (req, res) => {
     try {
         const count = await User.countDocuments();
@@ -35,8 +39,10 @@ router.get("/count", async (req, res) => {
     }
 });
 
+// ======================================================
 // GET /api/users/:id
 // Read one user by ID
+// ======================================================
 router.get("/:id", async (req, res) => {
     try {
         const user = await User.findById(req.params.id);
@@ -57,8 +63,57 @@ router.get("/:id", async (req, res) => {
     }
 });
 
+// ======================================================
+// PUT /api/users/:id
+// Update an existing user
+// ======================================================
+router.put("/:id", async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+
+        const user = await User.findById(req.params.id);
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        if (name) {
+            user.name = name;
+        }
+
+        if (email) {
+            user.email = email;
+        }
+
+        if (password) {
+            user.password = password;
+        }
+
+        await user.save();
+
+        res.json({
+            message: "User updated successfully",
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email
+            }
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            message: "Failed to update user",
+            error: error.message
+        });
+    }
+});
+
+// ======================================================
 // POST /api/users
 // Create a new user
+// ======================================================
 router.post("/", async (req, res) => {
     try {
         const { name, email, password } = req.body;
