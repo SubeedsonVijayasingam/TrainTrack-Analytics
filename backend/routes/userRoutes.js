@@ -1,51 +1,177 @@
+
 const express = require("express");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
 const router = express.Router();
 
-// ======================================================
-// GET /api/users
-// Read all users
-// ======================================================
-router.get("/", async (req, res) => {
-    try {
-        const users = await User.find();
+const JWT_SECRET = process.env.JWT_SECRET;
 
-        res.json(users);
+if (!JWT_SECRET) {
+    throw new Error("JWT_SECRET is missing from the backend .env file");
+}
+
+// Authentication middleware
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+        return res.status(401).json({
+            message: "Authentication token required"
+        });
+    }
+
+    try {
+        req.auth = jwt.verify(token, JWT_SECRET);
+        next();
     } catch (error) {
-        res.status(500).json({
-            message: "Failed to fetch users",
-            error: error.message
+        return res.status(401).json({
+            message: "Invalid or expired token"
+        });
+    }
+}
+
+// Register a new user
+router.post("/register", async (req, res) => {
+    try {
+        const { name, username, email, password } = req.body;
+
+        if (!name || !username || !email || !password) {
+            return res.status(400).json({
+                message: "Name, username, email and password are required"
+            });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                message: "Password must contain at least 8 characters"
+            });
+        }
+
+        const normalizedUsername = username.trim().toLowerCase();
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const existingUser = await User.findOne({
+            $or: [
+                { username: normalizedUsername },
+                { email: normalizedEmail }
+            ]
+        });
+
+        if (existingUser) {
+            return res.status(409).json({
+                message: "Username or email already exists"
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        const user = await User.create({
+            name: name.trim(),
+            username: normalizedUsername,
+            email: normalizedEmail,
+            password: hashedPassword
+        });
+
+        return res.status(201).json({
+            message: "Registration successful",
+            user: {
+                id: user._id,
+                name: user.name,
+                username: user.username,
+                email: user.email
+            }
+        });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(409).json({
+                message: "Username or email already exists"
+            });
+        }
+
+        return res.status(500).json({
+            message: "Registration failed"
         });
     }
 });
 
-// ======================================================
-// GET /api/users/count
-// Get total number of users
-// ======================================================
-router.get("/count", async (req, res) => {
+// Login with username and password
+router.post("/login", async (req, res) => {
     try {
-        const count = await User.countDocuments();
+        const { username, password } = req.body;
 
-        res.json({
-            totalUsers: count
+        if (!username || !password) {
+            return res.status(400).json({
+                message: "Username and password are required"
+            });
+        }
+
+        const user = await User.findOne({
+            username: username.trim().toLowerCase()
+        });
+
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(401).json({
+                message: "Invalid username or password"
+            });
+        }
+
+        const token = jwt.sign(
+            {
+                userId: user._id.toString(),
+                username: user.username
+            },
+            JWT_SECRET,
+            { expiresIn: "1h" }
+        );
+
+        return res.json({
+            message: "Login successful",
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                username: user.username,
+                email: user.email
+            }
         });
     } catch (error) {
-        res.status(500).json({
-            message: "Failed to count users",
-            error: error.message
+        return res.status(500).json({
+            message: "Login failed"
         });
     }
 });
 
-// ======================================================
-// GET /api/users/:id
-// Read one user by ID
-// ======================================================
-router.get("/:id", async (req, res) => {
+// Get all users (requires authentication)
+router.get("/", authenticateToken, async (req, res) => {
     try {
-        const user = await User.findById(req.params.id);
+        const users = await User.find().select("-password");
+        return res.json(users);
+    } catch (error) {
+        return res.status(500).json({
+            message: "Failed to fetch users"
+        });
+    }
+});
+
+// Get total user count (requires authentication)
+router.get("/count", authenticateToken, async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments();
+        return res.json({ totalUsers });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Failed to count users"
+        });
+    }
+});
+
+// Get one user by ID (requires authentication)
+router.get("/:id", authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id).select("-password");
 
         if (!user) {
             return res.status(404).json({
@@ -53,24 +179,24 @@ router.get("/:id", async (req, res) => {
             });
         }
 
-        res.json(user);
-
+        return res.json(user);
     } catch (error) {
-        res.status(500).json({
-            message: "Failed to fetch user",
-            error: error.message
+        return res.status(400).json({
+            message: "Invalid user ID"
         });
     }
 });
 
-// ======================================================
-// PUT /api/users/:id
-// Update an existing user
-// ======================================================
-router.put("/:id", async (req, res) => {
+// Update your own account (requires authentication)
+router.put("/:id", authenticateToken, async (req, res) => {
     try {
-        const { name, email, password } = req.body;
+        if (req.auth.userId !== req.params.id) {
+            return res.status(403).json({
+                message: "You can update only your own account"
+            });
+        }
 
+        const { name, username, email, password } = req.body;
         const user = await User.findById(req.params.id);
 
         if (!user) {
@@ -80,84 +206,129 @@ router.put("/:id", async (req, res) => {
         }
 
         if (name) {
-            user.name = name;
+            user.name = name.trim();
+        }
+
+        if (username) {
+            const normalizedUsername = username.trim().toLowerCase();
+
+            const existingUsername = await User.findOne({
+                username: normalizedUsername,
+                _id: { $ne: user._id }
+            });
+
+            if (existingUsername) {
+                return res.status(409).json({
+                    message: "Username already exists"
+                });
+            }
+
+            user.username = normalizedUsername;
         }
 
         if (email) {
-            user.email = email;
+            const normalizedEmail = email.trim().toLowerCase();
+
+            const existingEmail = await User.findOne({
+                email: normalizedEmail,
+                _id: { $ne: user._id }
+            });
+
+            if (existingEmail) {
+                return res.status(409).json({
+                    message: "Email already exists"
+                });
+            }
+
+            user.email = normalizedEmail;
         }
 
         if (password) {
-            user.password = password;
+            if (password.length < 8) {
+                return res.status(400).json({
+                    message: "Password must contain at least 8 characters"
+                });
+            }
+
+            user.password = await bcrypt.hash(password, 12);
         }
 
         await user.save();
 
-        res.json({
+        return res.json({
             message: "User updated successfully",
             user: {
                 id: user._id,
                 name: user.name,
+                username: user.username,
                 email: user.email
             }
         });
-
     } catch (error) {
-        res.status(500).json({
-            message: "Failed to update user",
-            error: error.message
+        if (error.code === 11000) {
+            return res.status(409).json({
+                message: "Username or email already exists"
+            });
+        }
+
+        return res.status(400).json({
+            message: "Failed to update user"
         });
     }
 });
 
-// ======================================================
-// POST /api/users
-// Create a new user
-// ======================================================
+// Create a user through the existing endpoint
 router.post("/", async (req, res) => {
     try {
-        const { name, email, password } = req.body;
+        const { name, username, email, password } = req.body;
 
-        // Check required fields
-        if (!name || !email || !password) {
+        if (!name || !username || !email || !password) {
             return res.status(400).json({
-                message: "Name, email and password are required"
+                message: "Name, username, email and password are required"
             });
         }
 
-        // Check whether email already exists
-        const existingUser = await User.findOne({ email });
-
-        if (existingUser) {
+        if (password.length < 8) {
             return res.status(400).json({
-                message: "Email already exists"
+                message: "Password must contain at least 8 characters"
             });
         }
 
-        // Create new user
-        const user = new User({
-            name: name,
-            email: email,
-            password: password
+        const normalizedUsername = username.trim().toLowerCase();
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const existingUser = await User.findOne({
+            $or: [
+                { username: normalizedUsername },
+                { email: normalizedEmail }
+            ]
         });
 
-        // Save user to MongoDB
-        await user.save();
+        if (existingUser) {
+            return res.status(409).json({
+                message: "Username or email already exists"
+            });
+        }
 
-        // Send success response
-        res.status(201).json({
+        const user = await User.create({
+            name: name.trim(),
+            username: normalizedUsername,
+            email: normalizedEmail,
+            password: await bcrypt.hash(password, 12)
+        });
+
+        return res.status(201).json({
             message: "User created successfully",
             user: {
                 id: user._id,
                 name: user.name,
+                username: user.username,
                 email: user.email
             }
         });
-
     } catch (error) {
-        res.status(500).json({
-            message: "Failed to create user",
-            error: error.message
+        return res.status(500).json({
+            message: "Failed to create user"
         });
     }
 });
