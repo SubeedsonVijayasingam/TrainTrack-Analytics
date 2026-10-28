@@ -10,8 +10,6 @@ const userSchema = new mongoose.Schema(
 
         username: {
             type: String,
-            required: true,
-            unique: true,
             trim: true,
             lowercase: true
         },
@@ -27,6 +25,11 @@ const userSchema = new mongoose.Schema(
         password: {
             type: String,
             required: true
+        },
+
+        tokenVersion: {
+            type: Number,
+            default: 0
         }
     },
     {
@@ -34,6 +37,17 @@ const userSchema = new mongoose.Schema(
     }
 );
 
+userSchema.index(
+    { username: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            username: { $type: "string" }
+        }
+    }
+);
+
 const User = mongoose.model("User", userSchema);
 
 module.exports = User;
+
