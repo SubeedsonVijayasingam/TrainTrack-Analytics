@@ -1,6 +1,57 @@
+import { useState } from 'react'
+import {
+  GoogleOAuthProvider,
+  GoogleLogin,
+} from '@react-oauth/google'
+import type { CredentialResponse } from '@react-oauth/google'
+
 import './App.css'
 
+interface User {
+  id: string
+  name: string
+  username: string
+  email: string
+}
+
 function App() {
+  const [user, setUser] = useState<User | null>(null)
+  const [error, setError] = useState('')
+
+  const handleGoogleSuccess = async (
+    credentialResponse: CredentialResponse,
+  ) => {
+    try {
+      setError('')
+
+      const response = await fetch(
+        'http://localhost:5000/api/users/google',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            credential: credentialResponse.credential,
+          }),
+        },
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Google login failed')
+      }
+
+      localStorage.setItem('token', data.token)
+      setUser(data.user)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Something went wrong',
+      )
+    }
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -9,8 +60,27 @@ function App() {
           <p>Learning Outcome Evaluation System</p>
         </div>
 
-        <button className="profile">HR Admin</button>
+        {user ? (
+          <div className="profile">{user.name}</div>
+        ) : (
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError('Google login failed')}
+          />
+        )}
       </header>
+
+      {error && (
+        <p role="alert" style={{ color: 'red', textAlign: 'center' }}>
+          {error}
+        </p>
+      )}
+
+      {user && (
+        <p style={{ textAlign: 'center', marginTop: '20px' }}>
+          Welcome, {user.name}! Google login successful.
+        </p>
+      )}
 
       <main className="dashboard">
         <section className="welcome">
@@ -81,5 +151,18 @@ function App() {
   )
 }
 
-export default App
+function AppWithGoogleAuth() {
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
+  if (!clientId) {
+    return <p>Google Client ID is missing. Check frontend/.env.local</p>
+  }
+
+  return (
+    <GoogleOAuthProvider clientId={clientId}>
+      <App />
+    </GoogleOAuthProvider>
+  )
+}
+
+export default AppWithGoogleAuth
