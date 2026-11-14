@@ -17,6 +17,9 @@ interface User {
 function App() {
   const [user, setUser] = useState<User | null>(null)
   const [error, setError] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploadMessage, setUploadMessage] = useState('')
+  const [uploading, setUploading] = useState(false)
 
   const handleGoogleSuccess = async (
     credentialResponse: CredentialResponse,
@@ -49,6 +52,57 @@ function App() {
       setError(
         err instanceof Error ? err.message : 'Something went wrong',
       )
+    }
+  }
+
+  const handleFileUpload = async () => {
+    if (!selectedFile) {
+      setUploadMessage('Please select a file first.')
+      return
+    }
+
+    const token = localStorage.getItem('token')
+
+    if (!token) {
+      setUploadMessage('Please sign in before uploading a file.')
+      return
+    }
+
+    try {
+      setUploading(true)
+      setUploadMessage('')
+
+      const formData = new FormData()
+      formData.append('file', selectedFile)
+
+      const response = await fetch(
+        'http://localhost:5000/api/uploads',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        },
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'File upload failed')
+      }
+
+      setUploadMessage(
+        `Successfully uploaded: ${data.file.originalName}`,
+      )
+
+      setSelectedFile(null)
+    } catch (err) {
+      setUploadMessage(
+        err instanceof Error ? err.message : 'Upload failed',
+      )
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -89,6 +143,49 @@ function App() {
             Monitor employee training, assessments, and workplace skill
             application.
           </p>
+        </section>
+
+        <section
+          style={{
+            background: 'white',
+            padding: '25px',
+            margin: '25px 0',
+            borderRadius: '10px',
+          }}
+        >
+          <h2>File Upload</h2>
+          <p>Upload your training documents and files.</p>
+
+          <input
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.docx"
+            onChange={(event) => {
+              setSelectedFile(event.target.files?.[0] || null)
+              setUploadMessage('')
+            }}
+          />
+
+          {selectedFile && (
+            <p>Selected file: {selectedFile.name}</p>
+          )}
+
+          <button
+            onClick={handleFileUpload}
+            disabled={uploading}
+            style={{
+              padding: '10px 20px',
+              marginTop: '15px',
+              cursor: 'pointer',
+            }}
+          >
+            {uploading ? 'Uploading...' : 'Upload File'}
+          </button>
+
+          {uploadMessage && (
+            <p role="status" style={{ marginTop: '15px' }}>
+              {uploadMessage}
+            </p>
+          )}
         </section>
 
         <section className="stats">

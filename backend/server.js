@@ -29,6 +29,10 @@ app.use("/api/users", userRoutes);
 const courseRoutes = require("./routes/courseRoutes");
 app.use("/api/courses", courseRoutes);
 
+// File upload routes
+const uploadRoutes = require("./routes/uploadRoutes");
+app.use("/api/uploads", uploadRoutes);
+
 // Connect to MongoDB and start server
 const startServer = async () => {
     try {
