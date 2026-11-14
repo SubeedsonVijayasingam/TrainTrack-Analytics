@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const authenticateToken = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
@@ -48,43 +49,6 @@ function passwordIsHashed(password) {
     return typeof password === "string" && /^\$2[aby]\$/.test(password);
 }
 
-async function authenticateToken(req, res, next) {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ")
-        ? authHeader.slice(7)
-        : null;
-
-    if (!token) {
-        return res.status(401).json({
-            message: "Authentication token required"
-        });
-    }
-
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const user = await User.findById(decoded.userId);
-
-        if (!user) {
-            return res.status(401).json({
-                message: "User no longer exists"
-            });
-        }
-
-        if (decoded.tokenVersion !== (user.tokenVersion || 0)) {
-            return res.status(401).json({
-                message: "Token is no longer valid. Please log in again."
-            });
-        }
-
-        req.auth = decoded;
-        next();
-    } catch (error) {
-        return res.status(401).json({
-            message: "Invalid or expired token"
-        });
-    }
-}
-
 async function createUser(req, res, successMessage) {
     try {
         const validationError = validateUserInput(req.body || {});
@@ -94,6 +58,7 @@ async function createUser(req, res, successMessage) {
         }
 
         const { name, username, email, password } = req.body;
+
         const normalizedUsername = username.trim().toLowerCase();
         const normalizedEmail = email.trim().toLowerCase();
 
@@ -127,6 +92,7 @@ async function createUser(req, res, successMessage) {
                 email: user.email
             }
         });
+
     } catch (error) {
         console.error("User creation failed:", error.message);
 
@@ -142,10 +108,12 @@ async function createUser(req, res, successMessage) {
     }
 }
 
+// Register
 router.post("/register", async (req, res) => {
     return createUser(req, res, "Registration successful");
 });
 
+// Login
 router.post("/login", async (req, res) => {
     try {
         const { username, email, password } = req.body || {};
@@ -243,6 +211,7 @@ router.post("/login", async (req, res) => {
                 email: user.email
             }
         });
+
     } catch (error) {
         console.error("Login failed:", error.message);
 
@@ -252,10 +221,12 @@ router.post("/login", async (req, res) => {
     }
 });
 
+// Get all users
 router.get("/", authenticateToken, async (req, res) => {
     try {
         const users = await User.find().select("-password");
         return res.json(users);
+
     } catch (error) {
         console.error("Failed to fetch users:", error.message);
 
@@ -265,10 +236,12 @@ router.get("/", authenticateToken, async (req, res) => {
     }
 });
 
+// Get user count
 router.get("/count", authenticateToken, async (req, res) => {
     try {
         const totalUsers = await User.countDocuments();
         return res.json({ totalUsers });
+
     } catch (error) {
         return res.status(500).json({
             message: "Failed to count users"
@@ -276,6 +249,7 @@ router.get("/count", authenticateToken, async (req, res) => {
     }
 });
 
+// Get user by ID
 router.get("/:id", authenticateToken, async (req, res) => {
     try {
         const user = await User.findById(req.params.id).select("-password");
@@ -287,6 +261,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
         }
 
         return res.json(user);
+
     } catch (error) {
         return res.status(400).json({
             message: "Invalid user ID"
@@ -294,6 +269,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
     }
 });
 
+// Update user
 router.put("/:id", authenticateToken, async (req, res) => {
     try {
         if (req.auth.userId !== req.params.id) {
@@ -303,6 +279,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
         }
 
         const { name, username, email, password } = req.body || {};
+
         const user = await User.findById(req.params.id);
 
         if (!user) {
@@ -407,6 +384,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
                 email: user.email
             }
         });
+
     } catch (error) {
         console.error("Failed to update user:", error.message);
 
@@ -422,6 +400,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
     }
 });
 
+// Create user
 router.post("/", async (req, res) => {
     return createUser(req, res, "User created successfully");
 });
