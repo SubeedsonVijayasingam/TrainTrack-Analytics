@@ -1,12 +1,17 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { OAuth2Client } = require("google-auth-library");
+
 const User = require("../models/User");
 const authenticateToken = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
 const MAX_PASSWORD_BYTES = 72;
 
 if (!JWT_SECRET) {
@@ -49,6 +54,45 @@ function passwordIsHashed(password) {
     return typeof password === "string" && /^\$2[aby]\$/.test(password);
 }
 
+async function generateUsername(email) {
+    const baseUsername = (
+        email.split("@")[0]
+            .toLowerCase()
+            .replace(/[^a-z0-9._-]/g, "") || "user"
+    ).slice(0, 25);
+
+    let candidate = baseUsername;
+    let suffix = 1;
+
+    while (await User.exists({ username: candidate })) {
+        candidate = `${baseUsername.slice(0, 25)}${suffix}`;
+        suffix++;
+    }
+
+    return candidate;
+}
+
+function generateToken(user) {
+    return jwt.sign(
+        {
+            userId: user._id.toString(),
+            username: user.username,
+            tokenVersion: user.tokenVersion || 0
+        },
+        JWT_SECRET,
+        { expiresIn: "1h" }
+    );
+}
+
+function userResponse(user) {
+    return {
+        id: user._id,
+        name: user.name,
+        username: user.username,
+        email: user.email
+    };
+}
+
 async function createUser(req, res, successMessage) {
     try {
         const validationError = validateUserInput(req.body || {});
@@ -80,17 +124,13 @@ async function createUser(req, res, successMessage) {
             username: normalizedUsername,
             email: normalizedEmail,
             password: await bcrypt.hash(password, 12),
+            authProvider: "local",
             tokenVersion: 0
         });
 
         return res.status(201).json({
             message: successMessage,
-            user: {
-                id: user._id,
-                name: user.name,
-                username: user.username,
-                email: user.email
-            }
+            user: userResponse(user)
         });
 
     } catch (error) {
@@ -113,7 +153,86 @@ router.post("/register", async (req, res) => {
     return createUser(req, res, "Registration successful");
 });
 
-// Login
+// Google Login
+router.post("/google", async (req, res) => {
+    try {
+        if (!GOOGLE_CLIENT_ID) {
+            return res.status(500).json({
+                message: "Google authentication is not configured"
+            });
+        }
+
+        const { credential } = req.body || {};
+
+        if (!credential) {
+            return res.status(400).json({
+                message: "Google credential is required"
+            });
+        }
+
+        const ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: GOOGLE_CLIENT_ID
+        });
+
+        const payload = ticket.getPayload();
+
+        if (!payload || !payload.sub || !payload.email || payload.email_verified !== true) {
+            return res.status(401).json({
+                message: "Google account could not be verified"
+            });
+        }
+
+        const googleId = payload.sub;
+        const email = payload.email.toLowerCase();
+
+        let user = await User.findOne({ googleId });
+
+        if (!user) {
+            user = await User.findOne({ email });
+
+            if (user) {
+                // Link an existing account only after Google's email verification.
+                user.googleId = googleId;
+                await user.save();
+            } else {
+                const username = await generateUsername(email);
+
+                user = await User.create({
+                    name: payload.name || email.split("@")[0],
+                    username,
+                    email,
+                    googleId,
+                    authProvider: "google",
+                    tokenVersion: 0
+                });
+            }
+        }
+
+        const token = generateToken(user);
+
+        return res.json({
+            message: "Google login successful",
+            token,
+            user: userResponse(user)
+        });
+
+    } catch (error) {
+        console.error("Google login failed:", error.message);
+
+        if (error.code === 11000) {
+            return res.status(409).json({
+                message: "This Google account is already linked"
+            });
+        }
+
+        return res.status(401).json({
+            message: "Google authentication failed"
+        });
+    }
+});
+
+// Normal Login
 router.post("/login", async (req, res) => {
     try {
         const { username, email, password } = req.body || {};
@@ -144,7 +263,7 @@ router.post("/login", async (req, res) => {
             ]
         });
 
-        if (!user) {
+        if (!user || !user.password) {
             return res.status(401).json({
                 message: "Invalid username/email or password"
             });
@@ -169,47 +288,17 @@ router.post("/login", async (req, res) => {
         }
 
         if (!user.username) {
-            const baseUsername = (
-                user.email.split("@")[0]
-                    .toLowerCase()
-                    .replace(/[^a-z0-9._-]/g, "") || "user"
-            ).slice(0, 25);
-
-            let candidate = baseUsername;
-            let suffix = 1;
-
-            while (await User.exists({
-                username: candidate,
-                _id: { $ne: user._id }
-            })) {
-                candidate = `${baseUsername.slice(0, 25)}${suffix}`;
-                suffix += 1;
-            }
-
-            user.username = candidate;
+            user.username = await generateUsername(user.email);
         }
 
         await user.save();
 
-        const token = jwt.sign(
-            {
-                userId: user._id.toString(),
-                username: user.username,
-                tokenVersion: user.tokenVersion || 0
-            },
-            JWT_SECRET,
-            { expiresIn: "1h" }
-        );
+        const token = generateToken(user);
 
         return res.json({
             message: "Login successful",
             token,
-            user: {
-                id: user._id,
-                name: user.name,
-                username: user.username,
-                email: user.email
-            }
+            user: userResponse(user)
         });
 
     } catch (error) {
@@ -377,12 +466,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
 
         return res.json({
             message: "User updated successfully",
-            user: {
-                id: user._id,
-                name: user.name,
-                username: user.username,
-                email: user.email
-            }
+            user: userResponse(user)
         });
 
     } catch (error) {
