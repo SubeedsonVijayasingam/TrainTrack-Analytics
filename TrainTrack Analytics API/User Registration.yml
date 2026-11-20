@@ -1,0 +1,25 @@
+info:
+  name: User Registration
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: http://localhost:5000/api/users/register
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Test User",
+        "username": "testuser123",
+        "email": "testuser123@gmail.com",
+        "password": "Test@12345"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

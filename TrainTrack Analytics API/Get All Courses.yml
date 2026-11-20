@@ -1,0 +1,18 @@
+info:
+  name: Get All Courses
+  type: http
+  seq: 11
+
+http:
+  method: GET
+  url: http://localhost:5000/api/courses
+  auth:
+    type: bearer
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2YjAwN2E5YzY0NGFiZGQ2ZjJiMThiMzUiLCJ1c2VybmFtZSI6InRlc3R1c2VyMTIzIiwidG9rZW5WZXJzaW9uIjowLCJpYXQiOjE3OTUxOTM1OTIsImV4cCI6MTc5NTE5NzE5Mn0.p9BSsy96SROlzW2_zmCByaEUh4Xjq4cXft3pVqjtL1c
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

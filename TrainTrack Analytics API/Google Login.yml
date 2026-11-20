@@ -1,0 +1,22 @@
+info:
+  name: Google Login
+  type: http
+  seq: 9
+
+http:
+  method: POST
+  url: http://localhost:5000/api/users/google
+  body:
+    type: json
+    data: |-
+      {
+        "credential": "YOUR_GOOGLE_ID_TOKEN"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
